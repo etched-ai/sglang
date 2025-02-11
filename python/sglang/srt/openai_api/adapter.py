@@ -1130,6 +1130,10 @@ def v1_chat_generate_response(
                     if finish_reason and "matched" in finish_reason
                     else None
                 ),
+                tokens = ret_item["meta_info"]["tokens"],
+                token_ids = ret_item["meta_info"]["token_ids"],
+                surprisals = ret_item["meta_info"]["surprisals"],
+                entropies = ret_item["meta_info"]["entropies"]
             )
 
         choices.append(choice_data)

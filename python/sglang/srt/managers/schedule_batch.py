@@ -318,6 +318,7 @@ class Req:
         self.hidden_states = []
 
         self.tokens = []
+        self.token_ids = []
         self.surprisals = []
         self.entropies = []
 
@@ -611,7 +612,7 @@ class ScheduleBatch:
 
     # Return hidden states
     return_hidden_states: bool = False
-    return_entropies: bool = False
+    return_entropy: bool = False
 
     @classmethod
     def init_new(
@@ -625,7 +626,7 @@ class ScheduleBatch:
         spec_algorithm: SpeculativeAlgorithm,
         enable_custom_logit_processor: bool,
         return_hidden_states: bool = False,
-        return_entropies: bool = False,
+        return_entropy: bool = False,
     ):
         return cls(
             reqs=reqs,
@@ -641,7 +642,7 @@ class ScheduleBatch:
             spec_algorithm=spec_algorithm,
             enable_custom_logit_processor=enable_custom_logit_processor,
             return_hidden_states=return_hidden_states,
-            return_entropies=return_entropies,
+            return_entropy=return_entropy,
         )
 
     def batch_size(self):

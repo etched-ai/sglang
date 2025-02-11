@@ -804,6 +804,7 @@ class TokenizerManager:
 
             if hasattr(recv_obj, "output_entropies"):
                 meta_info["tokens"] = recv_obj.output_tokens[i]
+                meta_info["token_ids"] = recv_obj.output_token_ids[i]
                 meta_info["surprisals"] = recv_obj.output_surprisals[i]
                 meta_info["entropies"] = recv_obj.output_entropies[i]
 

@@ -353,6 +353,10 @@ class ChatCompletionResponseChoice(BaseModel):
     logprobs: Optional[Union[LogProbs, ChoiceLogprobs]] = None
     finish_reason: str
     matched_stop: Union[None, int, str] = None
+    tokens: List[str]
+    token_ids: List[int]
+    surprisals: List[float]
+    entropies: List[float]
 
 
 class ChatCompletionResponse(BaseModel):
