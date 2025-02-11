@@ -317,6 +317,10 @@ class Req:
             ) = self.output_top_logprobs_idx = None
         self.hidden_states = []
 
+        self.tokens = []
+        self.surprisals = []
+        self.entropies = []
+
         # Logprobs (internal values)
         # The tokens is prefilled but need to be considered as decode tokens
         # and should be updated for the decode logprobs
@@ -607,6 +611,7 @@ class ScheduleBatch:
 
     # Return hidden states
     return_hidden_states: bool = False
+    return_entropies: bool = False
 
     @classmethod
     def init_new(
@@ -620,6 +625,7 @@ class ScheduleBatch:
         spec_algorithm: SpeculativeAlgorithm,
         enable_custom_logit_processor: bool,
         return_hidden_states: bool = False,
+        return_entropies: bool = False,
     ):
         return cls(
             reqs=reqs,
@@ -635,6 +641,7 @@ class ScheduleBatch:
             spec_algorithm=spec_algorithm,
             enable_custom_logit_processor=enable_custom_logit_processor,
             return_hidden_states=return_hidden_states,
+            return_entropies=return_entropies,
         )
 
     def batch_size(self):

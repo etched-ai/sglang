@@ -373,6 +373,10 @@ class BatchTokenIDOut:
 
     output_hidden_states: List[List[float]]
 
+    output_tokens: List[str]
+    output_surprisals: List[float]
+    output_entropies: List[float]
+
 
 @dataclass
 class BatchStrOut:
@@ -401,6 +405,9 @@ class BatchStrOut:
 
     output_hidden_states: List[List[float]]
 
+    output_tokens: List[str]
+    output_surprisals: List[float]
+    output_entropies: List[float]
 
 @dataclass
 class BatchEmbeddingOut:

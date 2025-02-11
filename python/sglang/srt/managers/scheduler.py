@@ -998,6 +998,7 @@ class Scheduler:
             self.spec_algorithm,
             self.server_args.enable_custom_logit_processor,
             self.server_args.return_hidden_states,
+            self.server_args.return_entropies,
         )
         new_batch.prepare_for_extend()
 
@@ -1200,6 +1201,21 @@ class Scheduler:
                             .clone()
                         )
 
+                    if self.server_args.return_entropies:
+                        offset = 0
+                        ntl = logits_output.next_token_logits.cpu()
+                        ntl = ntl[offset : (offset := offset + len(req.origin_input_ids))]
+                        tokens = self.tokenizer.batch_decode(next_token_id)
+                        logprobs = torch.log_softmax(ntl, dim=-1)
+                        probs = logprobs.exp()
+                        surprisals = logprobs.gather(dim=-1, index=next_token_ids.unsqueeze(-1)).squeeze(-1)
+                        entropies = -(probs * logprobs).sum(dim=-1)
+
+                        req.tokens.append(tokens)
+                        req.surprisals.append(surprisals)
+                        req.entropies.append(entropies)
+
+
                     if req.grammar is not None:
                         req.grammar.accept_token(next_token_id)
                         req.grammar.finished = req.finished()
@@ -1298,6 +1314,18 @@ class Scheduler:
                 and logits_output.hidden_states is not None
             ):
                 req.hidden_states.append(logits_output.hidden_states[i].cpu().clone())
+
+            if self.server_args.return_entropies:
+                ntl = logits_output.next_token_logits[i].cpu()
+                token = self.tokenizer.batch_decode(next_token_id)
+                logprob = torch.log_softmax(ntl, dim=-1)
+                prob = logprob.exp()
+                surprisal = logprobs[next_token_id]
+                entropy = -(probs * logprobs).sum(dim=-1)
+
+                req.tokens.append(token)
+                req.surprisals.append(surprisal)
+                req.entropies.append(entropy)
 
             if req.grammar is not None:
                 req.grammar.accept_token(next_token_id)
@@ -1424,6 +1452,10 @@ class Scheduler:
             spec_verify_ct = []
             hidden_states = []
 
+            tokens = []
+            surprisals = []
+            entropies = []
+
             if return_logprob:
                 input_token_logprobs_val = []
                 input_token_logprobs_idx = []
@@ -1491,6 +1523,10 @@ class Scheduler:
 
                     hidden_states.append(req.hidden_states)
 
+                    tokens.append(req.tokens)
+                    surprisals.append(req.surprisals)
+                    entropies.append(req.entropies)
+
             # Send to detokenizer
             if rids:
                 self.send_to_detokenizer.send_pyobj(
@@ -1518,6 +1554,9 @@ class Scheduler:
                         output_top_logprobs_val,
                         output_top_logprobs_idx,
                         hidden_states,
+                        tokens,
+                        surprisals,
+                        entropies,
                     )
                 )
         else:  # embedding or reward model
@@ -1582,6 +1621,7 @@ class Scheduler:
             self.spec_algorithm,
             self.server_args.enable_custom_logit_processor,
             self.server_args.return_hidden_states,
+            self.server_args.return_entropies,
         )
         idle_batch.prepare_for_idle()
         return idle_batch

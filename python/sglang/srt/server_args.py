@@ -161,6 +161,7 @@ class ServerArgs:
     enable_memory_saver: bool = False
     allow_auto_truncate: bool = False
     return_hidden_states: bool = False
+    return_entropy: bool = False
 
     # Custom logit processor
     enable_custom_logit_processor: bool = False
@@ -901,6 +902,11 @@ class ServerArgs:
             "--return-hidden-states",
             action="store_true",
             help="Return hidden states in the response.",
+        )
+        parser.add_argument(
+            "--return-entropy",
+            action="store_true",
+            help="Return the per-token surprisal, entroy, and tokenized text in the response."
         )
         # Function Calling
         parser.add_argument(

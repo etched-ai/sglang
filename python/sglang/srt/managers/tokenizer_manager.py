@@ -802,6 +802,11 @@ class TokenizerManager:
             ):
                 meta_info["hidden_states"] = recv_obj.output_hidden_states[i]
 
+            if hasattr(recv_obj, "output_entropies"):
+                meta_info["tokens"] = recv_obj.output_tokens[i]
+                meta_info["surprisals"] = recv_obj.output_surprisals[i]
+                meta_info["entropies"] = recv_obj.output_entropies[i]
+
             if isinstance(recv_obj, BatchStrOut):
                 out_dict = {
                     "text": recv_obj.output_strs[i],
