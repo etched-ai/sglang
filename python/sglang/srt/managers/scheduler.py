@@ -998,7 +998,6 @@ class Scheduler:
             self.spec_algorithm,
             self.server_args.enable_custom_logit_processor,
             self.server_args.return_hidden_states,
-            self.server_args.return_entropy,
         )
         new_batch.prepare_for_extend()
 
