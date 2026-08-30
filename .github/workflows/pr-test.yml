@@ -17,9 +17,26 @@ concurrency:
   group: pr-test-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: these jobs only check out and test the repository.
+permissions:
+  contents: read
+
+# Every job below is gated on `github.repository == 'sgl-project/sglang'` alone.
+# The gate previously read
+#     github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+# which made the repository check unreachable for the case it was written to
+# defend: the `|| pull_request` arm let *any* fork run these jobs for any pull
+# request opened against that fork's main branch. The jobs run on self-hosted
+# runners (1-gpu-runner / 2-gpu-runner), so that arm allowed unreviewed
+# pull-request code to execute on persistent, org-attached hardware -- the
+# self-hosted-runner compromise path: harvest the runner's registration token and
+# any credentials on the box, poison the shared build cache, and persist across
+# subsequent jobs. Upstream pull requests are still tested, because in the
+# upstream repository the remaining condition is true for pull_request events too.
+
 jobs:
   unit-test-frontend:
-    if: github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+    if: github.repository == 'sgl-project/sglang'
     runs-on: 1-gpu-runner
     steps:
       - name: Checkout code
@@ -38,7 +55,7 @@ jobs:
           python3 run_suite.py --suite minimal
 
   unit-test-backend-part-1:
-    if: github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+    if: github.repository == 'sgl-project/sglang'
     runs-on: 1-gpu-runner
     steps:
       - name: Checkout code
@@ -57,7 +74,7 @@ jobs:
           python3 run_suite.py --suite minimal --range-begin 0 --range-end 7
 
   unit-test-backend-part-2:
-    if: github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+    if: github.repository == 'sgl-project/sglang'
     runs-on: 1-gpu-runner
     steps:
       - name: Checkout code
@@ -76,7 +93,7 @@ jobs:
           python3 run_suite.py --suite minimal --range-begin 7 --range-end 14
 
   unit-test-backend-part-3:
-    if: github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+    if: github.repository == 'sgl-project/sglang'
     runs-on: 1-gpu-runner
     steps:
       - name: Checkout code
@@ -95,7 +112,7 @@ jobs:
           python3 run_suite.py --suite minimal --range-begin 14
 
   performance-test-1-gpu-part-1:
-    if: github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+    if: github.repository == 'sgl-project/sglang'
     runs-on: 1-gpu-runner
     steps:
       - name: Checkout code
@@ -126,7 +143,7 @@ jobs:
           python3 -m unittest test_bench_serving.TestBenchServing.test_offline_throughput_default
 
   performance-test-1-gpu-part-2:
-    if: github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+    if: github.repository == 'sgl-project/sglang'
     runs-on: 1-gpu-runner
     steps:
       - name: Checkout code
@@ -157,7 +174,7 @@ jobs:
           python3 -m unittest test_bench_serving.TestBenchServing.test_offline_throughput_default_fp8
 
   performance-test-2-gpu:
-    if: github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+    if: github.repository == 'sgl-project/sglang'
     runs-on: 2-gpu-runner
     steps:
       - name: Checkout code
@@ -189,7 +206,7 @@ jobs:
 
 
   accuracy-test-1-gpu:
-    if: github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+    if: github.repository == 'sgl-project/sglang'
     runs-on: 1-gpu-runner
     steps:
       - name: Checkout code
@@ -212,7 +229,7 @@ jobs:
           python3 test_eval_accuracy_large.py
 
   accuracy-test-2-gpu:
-    if: github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request'
+    if: github.repository == 'sgl-project/sglang'
     runs-on: 2-gpu-runner
     steps:
       - name: Checkout code
