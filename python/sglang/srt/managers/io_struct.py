@@ -26,6 +26,57 @@ from typing import Dict, List, Optional, Union
 from sglang.srt.managers.schedule_batch import BaseFinishReason
 from sglang.srt.sampling.sampling_params import SamplingParams
 
+# Upper bounds on the two request fields that multiply server-side work by a
+# caller-controlled factor. Both were previously unbounded, so a single HTTP
+# request could ask for an arbitrary amount of computation and memory:
+#
+#   * `n` (parallel_sample_num) multiplies the number of sequences the scheduler
+#     allocates KV cache for and the number of tokens it decodes.
+#   * `top_logprobs_num` is the per-token top-k logprob width; every decoded token
+#     carries that many (token, logprob) pairs through the scheduler, the
+#     detokenizer, and the JSON response.
+#
+# These are denial-of-service guards, not correctness limits. The values are
+# generous relative to legitimate use (OpenAI's own API caps top_logprobs at 20)
+# and can be raised by a deployment that has a reason to.
+MAX_PARALLEL_SAMPLE_NUM = 128
+MAX_TOP_LOGPROBS_NUM = 128
+
+
+def _validate_request_limits(
+    parallel_sample_num: int, top_logprobs_nums: List[Optional[int]]
+) -> None:
+    """Reject caller-supplied fan-out values that exceed the server-side caps.
+
+    Raises ValueError so the caller surfaces an HTTP 400 rather than letting the
+    value reach the scheduler, where an oversized allocation would take down the
+    whole server process for every concurrent request, not just this one.
+    """
+    if not isinstance(parallel_sample_num, int) or isinstance(
+        parallel_sample_num, bool
+    ):
+        raise ValueError(
+            f"n must be an integer, got {parallel_sample_num!r}."
+        )
+    if not 1 <= parallel_sample_num <= MAX_PARALLEL_SAMPLE_NUM:
+        raise ValueError(
+            f"n must be in [1, {MAX_PARALLEL_SAMPLE_NUM}], got {parallel_sample_num}."
+        )
+    for top_logprobs_num in top_logprobs_nums:
+        if top_logprobs_num is None:
+            continue
+        if not isinstance(top_logprobs_num, int) or isinstance(
+            top_logprobs_num, bool
+        ):
+            raise ValueError(
+                f"top_logprobs_num must be an integer, got {top_logprobs_num!r}."
+            )
+        if not 0 <= top_logprobs_num <= MAX_TOP_LOGPROBS_NUM:
+            raise ValueError(
+                f"top_logprobs_num must be in [0, {MAX_TOP_LOGPROBS_NUM}], "
+                f"got {top_logprobs_num}."
+            )
+
 
 @dataclass
 class GenerateReqInput:
@@ -64,6 +115,28 @@ class GenerateReqInput:
             self.text is not None and self.input_ids is not None
         ):
             raise ValueError("Either text or input_ids should be provided.")
+
+        # Bound the caller-controlled fan-out fields before any of the sizing
+        # arithmetic below consumes them. `n` is read out of sampling_params at
+        # lines further down and used to multiply the allocated request count, and
+        # top_logprobs_num is forwarded to the scheduler untouched, so both must be
+        # validated here -- this is the single funnel every /generate request passes
+        # through, whether it arrives via HTTP or the in-process Runtime API.
+        if isinstance(self.sampling_params, dict):
+            requested_n = self.sampling_params.get("n", 1)
+        elif isinstance(self.sampling_params, list):
+            requested_n = max(
+                (sp.get("n", 1) for sp in self.sampling_params), default=1
+            )
+        else:
+            requested_n = 1
+        _validate_request_limits(
+            requested_n,
+            self.top_logprobs_num
+            if isinstance(self.top_logprobs_num, list)
+            else [self.top_logprobs_num],
+        )
+
 
         if (
             isinstance(self.sampling_params, dict)

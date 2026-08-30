@@ -30,7 +30,10 @@ class ModelConfig:
     def __init__(
         self,
         path: str,
-        trust_remote_code: bool = True,
+        # Fail closed, matching ServerArgs.trust_remote_code. Enabling this makes
+        # transformers import and execute Python from the model repository, so it
+        # must be an explicit caller decision rather than a default.
+        trust_remote_code: bool = False,
         revision: Optional[str] = None,
         context_length: Optional[int] = None,
         model_override_args: Optional[dict] = None,

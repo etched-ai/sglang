@@ -98,7 +98,17 @@ tokenizer_manager = None
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # `allow_credentials=True` together with `allow_origins=["*"]` is the classic
+    # unsafe CORS pairing: Starlette then reflects the caller's Origin back in
+    # Access-Control-Allow-Origin and adds Access-Control-Allow-Credentials, so any
+    # website a browser user visits can issue cross-origin requests to this server
+    # with the user's cookies attached and read the responses. This server exposes
+    # no cookie- or session-based authentication -- the only supported credential is
+    # the Authorization bearer header, which a cross-origin page must set explicitly
+    # and which is therefore unaffected -- so credentialed CORS buys nothing and is
+    # disabled. Deployments that genuinely need it must replace the wildcard with an
+    # explicit origin allowlist.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

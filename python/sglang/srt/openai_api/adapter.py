@@ -356,7 +356,12 @@ async def process_batch(tokenizer_manager, batch_id: str, batch_request: BatchRe
         }
 
     except Exception as e:
-        logger.error("error in SGLang:", e)
+        # `logger.error("...:", e)` passed the exception as a printf-style argument
+        # to a format string that has no placeholder, so logging raised internally
+        # and discarded the record: the exception was never written anywhere and the
+        # batch silently transitioned to "failed" with no diagnostic. Use
+        # exception() so the type, message, and traceback all reach the log.
+        logger.exception("Error in SGLang while processing batch %s: %s", batch_id, e)
         # Update batch status to "failed"
         retrieve_batch = batch_storage[batch_id]
         retrieve_batch.status = "failed"
@@ -431,8 +436,11 @@ async def cancel_batch(tokenizer_manager, batch_id: str, input_file_id: str):
         retrieve_batch.status = "cancelled"
 
     except Exception as e:
-        logger.error("error in SGLang:", e)
-        # Update batch status to "failed"
+        # See the identical fix in v1_batches(): the original
+        # `logger.error("error in SGLang:", e)` supplied an argument to a format
+        # string with no placeholder, so logging swallowed the record and the
+        # cancellation failure was never reported.
+        logger.exception("Error in SGLang while cancelling batch %s: %s", batch_id, e)
         retrieve_batch = batch_storage[batch_id]
         retrieve_batch.status = "failed"
         retrieve_batch.failed_at = int(time.time())
