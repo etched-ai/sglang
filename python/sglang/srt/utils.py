@@ -17,6 +17,10 @@ limitations under the License.
 
 import base64
 import fcntl
+# Used by add_api_key_middleware for the constant-time bearer-token comparison.
+import hmac
+# ipaddress and urlparse back the SSRF guard in _assert_remote_image_url_allowed.
+import ipaddress
 import logging
 import os
 import random
@@ -27,6 +31,7 @@ import time
 from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
 import numpy as np
 import psutil
@@ -304,6 +309,60 @@ def decode_video_base64(video_base64):
         )  # Return an empty array and size tuple if no frames were found
 
 
+# Maximum number of bytes load_image() will read from a remote image URL. Without
+# a cap, `requests.get(...).content` buffers the whole response, so a caller could
+# point the server at an endlessly streaming URL and exhaust its memory.
+MAX_REMOTE_IMAGE_BYTES = 32 * 1024 * 1024
+
+
+def _assert_remote_image_url_allowed(url: str) -> None:
+    """Reject image URLs that resolve to a non-public address.
+
+    `load_image` fetches caller-supplied URLs from inside the server process, which
+    makes it a server-side request forgery primitive: the requested host is resolved
+    and connected to with the server's network position and credentials. Left
+    unguarded, a request body containing
+    `http://169.254.169.254/latest/meta-data/iam/security-credentials/` reaches the
+    cloud instance metadata service, and `http://127.0.0.1:<port>/` reaches every
+    service bound to the server's loopback interface -- including sglang's own ZMQ
+    control sockets. The image bytes themselves are not returned to the caller, but
+    the response status and timing are observable, so this is usable both as a
+    blind-SSRF port scanner and, for endpoints with side effects, as a way to invoke
+    them.
+
+    Every address the hostname resolves to must be public; a single private answer
+    rejects the URL, since which answer the subsequent connection actually uses is
+    not under our control. Set SGLANG_ALLOW_PRIVATE_IMAGE_URLS=1 to opt out when the
+    server is deliberately fetching from a trusted host on the local network.
+    """
+    if os.getenv("SGLANG_ALLOW_PRIVATE_IMAGE_URLS", "0") == "1":
+        return
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported image URL scheme: {parsed.scheme!r}.")
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Image URL has no host.")
+
+    try:
+        addrinfo = socket.getaddrinfo(hostname, parsed.port or 0, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise ValueError(f"Could not resolve image URL host {hostname!r}.") from e
+
+    for family, _type, _proto, _canonname, sockaddr in addrinfo:
+        ip = ipaddress.ip_address(sockaddr[0])
+        # is_global is False for loopback, private (RFC1918), link-local
+        # (169.254.0.0/16 -- the cloud metadata range), unique-local IPv6,
+        # multicast, and reserved space, which is exactly the set to refuse.
+        if not ip.is_global:
+            raise ValueError(
+                f"Refusing to fetch image from non-public address {ip} "
+                f"(host {hostname!r}). Set SGLANG_ALLOW_PRIVATE_IMAGE_URLS=1 to "
+                "allow this."
+            )
+
+
 def load_image(image_file: Union[str, bytes]):
     from PIL import Image
 
@@ -313,8 +372,22 @@ def load_image(image_file: Union[str, bytes]):
         image = Image.open(BytesIO(image_file))
     elif image_file.startswith("http://") or image_file.startswith("https://"):
         timeout = int(os.getenv("REQUEST_TIMEOUT", "3"))
-        response = requests.get(image_file, timeout=timeout)
-        image = Image.open(BytesIO(response.content))
+        _assert_remote_image_url_allowed(image_file)
+        # allow_redirects=False: a permitted public host must not be able to bounce
+        # the fetch to 169.254.169.254 or 127.0.0.1 after the check above has
+        # already passed on the original URL.
+        response = requests.get(
+            image_file, timeout=timeout, stream=True, allow_redirects=False
+        )
+        response.raise_for_status()
+        # Read with a hard ceiling instead of `.content`, which would buffer a
+        # response of any declared or undeclared length.
+        content = response.raw.read(MAX_REMOTE_IMAGE_BYTES + 1, decode_content=True)
+        if len(content) > MAX_REMOTE_IMAGE_BYTES:
+            raise ValueError(
+                f"Remote image exceeds the {MAX_REMOTE_IMAGE_BYTES} byte limit."
+            )
+        image = Image.open(BytesIO(content))
     elif image_file.lower().endswith(("png", "jpg", "jpeg", "webp", "gif")):
         image = Image.open(image_file)
     elif image_file.startswith("data:"):
@@ -636,9 +709,17 @@ def add_api_key_middleware(app, api_key: str):
     async def authentication(request, call_next):
         if request.method == "OPTIONS":
             return await call_next(request)
-        if request.url.path.startswith("/health"):
+        # Exempt only the exact liveness path. `startswith("/health")` also matched
+        # "/health_generate", which runs a real generation request, and would match
+        # any future path sharing that prefix -- so an unauthenticated caller could
+        # drive inference on an API-key-protected server.
+        if request.url.path == "/health":
             return await call_next(request)
-        if request.headers.get("Authorization") != "Bearer " + api_key:
+        # Compare in constant time. A plain `!=` on str short-circuits at the first
+        # differing byte, which leaks the length of the correct prefix and makes the
+        # key recoverable byte by byte over many requests.
+        presented = request.headers.get("Authorization") or ""
+        if not hmac.compare_digest(presented, "Bearer " + api_key):
             return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
         return await call_next(request)
 

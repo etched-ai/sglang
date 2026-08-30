@@ -36,7 +36,15 @@ class ServerArgs:
     load_format: str = "auto"
     dtype: str = "auto"
     kv_cache_dtype: str = "auto"
-    trust_remote_code: bool = True
+    # Fail closed. `trust_remote_code=True` makes transformers execute Python
+    # shipped inside the model repository at load time, so any path that can
+    # influence `model_path` -- including the /update_weights endpoint -- becomes
+    # remote code execution. The CLI flag below is `action="store_true"`, i.e. it
+    # already defaults to False, so this default only ever applied to programmatic
+    # construction (Runtime/Engine/launch_server), where it silently disagreed with
+    # the documented CLI behaviour. Callers that genuinely need custom modeling
+    # code must now opt in explicitly.
+    trust_remote_code: bool = False
     context_length: Optional[int] = None
     quantization: Optional[str] = None
     served_model_name: Optional[str] = None
